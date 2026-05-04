@@ -46,7 +46,13 @@ def indices(stop: int, *, start: int = 0, restart: int | None = None) -> Iterato
         yield index
 
 
-def stream(path: str | os.PathLike[str], start: int = 0, stop: int | None = None, restart: int | None = None) -> None:
+def stream(
+    path: str | os.PathLike[str],
+    start: int = 0,
+    stop: int | None = None,
+    restart: int | None = None,
+    trigger: int = 0,
+) -> None:
     """Stream data from a file.
 
     Args:
@@ -56,11 +62,12 @@ def stream(path: str | os.PathLike[str], start: int = 0, stop: int | None = None
             the last row for the data in the `.npy` file.
         restart: If provided, the index will reset to this value after reaching `stop`,
             otherwise restart is set to `start`.
+        trigger: The index at which to send a trigger signal (modulo 20).
     """
     data = cast("FPGAData", np.load(path, mmap_mode="r"))
 
     context: Context[SyncSocket] = zmq.Context()
-    pusher: SyncSocket =context.socket(zmq.PUSH)
+    pusher: SyncSocket = context.socket(zmq.PUSH)
     _ = pusher.bind("tcp://127.0.0.1:5555")
 
     if stop is None:
@@ -68,14 +75,13 @@ def stream(path: str | os.PathLike[str], start: int = 0, stop: int | None = None
 
     t0: float = perf_counter()
     for index in indices(stop, start=start, restart=restart):
-        trigger = b"\x01" if index % 20 == 0 else b"\x00"
-        _ = pusher.send_multipart([trigger, data[index].tobytes()])  # pyright: ignore[reportAny, reportUnknownMemberType]
+        triggered = b"\x01" if index % 20 == trigger else b"\x00"
+        _ = pusher.send_multipart([triggered, data[index].tobytes()])  # pyright: ignore[reportAny, reportUnknownMemberType]
         sleep(max(0, 0.01 - (perf_counter() - t0)))
         t0 = perf_counter()
 
 
-
-def stream_handler()-> None:
+def stream_handler() -> None:
     """Handle streaming data from the FPGA."""
     context: Context[SyncSocket] = zmq.Context()
     puller: SyncSocket = context.socket(zmq.PULL)
