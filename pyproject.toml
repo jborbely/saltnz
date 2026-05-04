@@ -1,0 +1,109 @@
+[project]
+name = "saltnz"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Johan", email = "johan.grand@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "numpy>=2.4.4",
+    "pyzmq>=27.1.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.3,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.39.3",
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.12",
+]
+
+[tool.pytest]
+addopts = [
+    "--cov=src",
+    "--cov-report=html",
+    "--cov-config=pyproject.toml",
+    "--verbose",
+    "--doctest-modules",
+    "--doctest-glob=*.md",
+    "--import-mode=importlib",
+]
+cache_dir = ".cache/pytest"
+doctest_optionflags = [
+    "NORMALIZE_WHITESPACE",
+    "ALLOW_UNICODE",    
+    "ELLIPSIS"
+]
+
+[tool.coverage.run]
+branch = true
+data_file = ".cache/coverage/.coverage"
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "pragma: no branch",
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+]
+
+[tool.coverage.html]
+directory = ".cache/coverage"
+title = "saltnz coverage report"
+
+[tool.basedpyright]
+failOnWarnings = true
+typeCheckingMode = "recommended"
+useLibraryCodeForTypes = false
+exclude = [
+    "**/.*",
+    "**/__pycache__",
+]
+
+[tool.ruff]
+cache-dir = ".cache/ruff"
+line-length = 120
+exclude = [
+    ".cache",
+    ".git",
+    ".github",
+    ".venv",
+    "build",
+    "dist",
+    "venv",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["saltnz"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+#     "D203", # one-blank-line-before-class
+#     "D213", # multi-line-summary-second-line
+#     "COM812", # missing-trailing-comma
+#     "ISC001", # single-line-implicit-string-concatenation
+#     "ANN401", # dynamically typed expressions (typing.Any) are disallowed
+ ]
+
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = [
+    "D100", # Missing docstring in public module
+    "D101", # Missing docstring in public class
+    "D102", # Missing docstring in public method
+    "D103", # Missing docstring in public function
+    "D105", # Missing docstring in magic method
+    "S101", # Use of `assert` detected
+    "PLR2004", # Magic value used in comparison
+    "INP001"  # implicit-namespace-package
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
