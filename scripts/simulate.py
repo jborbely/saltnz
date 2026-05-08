@@ -13,38 +13,37 @@ dt = 1e-6  # approximate sampling time, s
 repeater_distance = 3843.757e3  # m
 sample_interval = 0.01  # s
 c = 299792458.0  # speed of light in vacuum, m/s
-n = 1.4682  # index of refraction of standard telecommunication fibre
+n = 1.4682  # index of refraction
 wl = 1567.13e-9  # wavelength, m
 cycles = 5  # number of ramp cycles to plot
 laser_frequency = 0  # c / wl  # Hz
 
 
-def simulate(distance: float) -> tuple[float, Array1D, Array1D]:
+def simulate(distance: float) -> tuple[float, float, Array1D, Array1D]:
     """Simulate a ramp.
 
     Args:
         distance: The distance to a repeater, in metres.
 
     Returns:
-        (round-trip delay, time array, ramp array in MHz)
+        (round-trip delay, actual dt, time array, ramp array in MHz)
     """
     delay = (2.0 * distance) / (c / n)  # round-trip delay for the light to return from a repeater
 
-    x = np.linspace(0, (ramp_duration * cycles) + delay, num=round((ramp_duration * cycles) / dt))
+    x, dx = np.linspace(0, (ramp_duration * cycles) + delay, num=round((ramp_duration * cycles) / dt), retstep=True)
     y = np.array([])
     for i in range(cycles):
         x0 = i * ramp_duration
         ramp_x = x[(x >= x0) & (x <= x0 + ramp_duration)]
-        y = np.append(y, (ramp_slope * ramp_duration) * (ramp_x - x0) + laser_frequency)
+        y = np.append(y, ramp_slope * (ramp_x - x0) + laser_frequency)
 
-    return delay, x, np.append(y, np.full((x.size - y.size,), laser_frequency)) / 1e6  # in MHz
+    return delay, dx, x, np.append(y, np.full((x.size - y.size,), laser_frequency)) * 1e-6  # in MHz
 
-
-# the ramp signal at Auckland (the light that did not go to a subsea cable)
-delay, x, auckland = simulate(repeater_distance)
+# the ramp signal at Auckland (the light that did not go to a sub-sea cable)
+delay, dx, x, auckland = simulate(repeater_distance)
 
 # the signal from the repeater
-repeater = np.roll(auckland, shift=round(delay / (x[1] - x[0])))
+repeater = np.roll(auckland, shift=round(delay / dx))
 
 # the beat frequency
 beat = np.abs(repeater - auckland)
