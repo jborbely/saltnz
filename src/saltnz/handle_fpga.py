@@ -16,6 +16,10 @@ if TYPE_CHECKING:
 
 from .constants import FPGA_PORT, MSL_RAMP_PORT, logger
 
+FPGA_INTERCEPT_MHZ = 2.046338
+SWEEP_RATE_MHZ_PER_MS = 1.257
+DISCARD_MARGIN_SAMPLES = 0.1
+WRAPPED_RANGE_OFFSET_MHZ = 25
 
 @dataclass(slots=True)
 class Config:
@@ -31,22 +35,27 @@ class Config:
     sampling_time_ms: float
     start_index: int = 0
 
-
     def __post_init__(self) -> None:
         """Calculate the starting index for the channel."""
-        margin = 0.1
         if self.range == 0:
-            delay_samples = (self.freq - 2.046338) / 1.257 / self.sampling_time_ms
+            true_freq = self.freq
         elif self.range == 1:
-            delay_samples = (self.freq + 25 - 2.046338) / 1.257 / self.sampling_time_ms
+            true_freq = self.freq + WRAPPED_RANGE_OFFSET_MHZ
         else:
             msg = f"Unsupported range {self.range} for NZ setup; expected 0 or 1"
             raise ValueError(msg)
 
+        delay_samples = (
+            (true_freq - FPGA_INTERCEPT_MHZ)
+            / SWEEP_RATE_MHZ_PER_MS
+            / self.sampling_time_ms
+        )
+
         n_discard = ceil(delay_samples)
 
-        if n_discard - delay_samples <= margin:
+        if n_discard - delay_samples <= DISCARD_MARGIN_SAMPLES:
             n_discard += 1
+
         self.start_index = n_discard
 
 channels: list[Config] = []
@@ -59,15 +68,22 @@ def create_channels(config_path: str | os.PathLike[str]) -> list[Config]:
         config_path: The path to the YAML configuration file.
     """
     if not channels:
-
         with Path(config_path).open() as f:
             config = yaml.safe_load(f)
             sampling_time_ms = config["sampling_time_ms"]
-            for c in config["filter_channels"]:
-                channels.append(Config(freq=c["freq"], polarisation=c["pol"], channel=c["ch"], range=c["range"], repeater=c["rep"], sampling_time_ms=sampling_time_ms))
+            channel_configs = config["filter_channels"] + config["sum_channels"]
 
-            for c in config["sum_channels"]:
-                channels.append(Config(freq=c["freq"], polarisation=c["pol"], channel=c["ch"], range=c["range"], repeater=c["rep"], sampling_time_ms=sampling_time_ms))
+            for c in channel_configs:
+                channels.append(
+                    Config(
+                        freq=c["freq"],
+                        polarisation=c["pol"],
+                        channel=c["ch"],
+                        range=c["range"],
+                        repeater=c["rep"],
+                        sampling_time_ms=sampling_time_ms,
+                    )
+                )
 
     return channels
 
