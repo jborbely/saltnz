@@ -34,16 +34,20 @@ class Config:
 
     def __post_init__(self) -> None:
         """Calculate the starting index for the channel."""
+        margin = 0.1
         if self.range == 0:
-            n_discard = ceil((self.freq - 2) / 1.257 / self.sampling_time_ms)
+            delay_samples = (self.freq - 2.046338) / 1.257 / self.sampling_time_ms
         elif self.range == 1:
-            n_discard = ceil((self.freq + 25 - 2) / 1.257 / self.sampling_time_ms)
+            delay_samples = (self.freq + 25 - 2.046338) / 1.257 / self.sampling_time_ms
         else:
             msg = f"Unsupported range {self.range} for NZ setup; expected 0 or 1"
             raise ValueError(msg)
 
-        self.start_index = self.channel + n_discard
+        n_discard = ceil(delay_samples)
 
+        if n_discard - delay_samples <= margin:
+            n_discard += 1
+        self.start_index = n_discard
 
 channels: list[Config] = []
 
