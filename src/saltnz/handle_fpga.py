@@ -2,6 +2,7 @@
 
 import struct
 from dataclasses import dataclass
+from math import ceil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -27,12 +28,21 @@ class Config:
     channel: int
     range: int
     repeater: int
+    sampling_time_ms: float
     start_index: int = 0
+
 
     def __post_init__(self) -> None:
         """Calculate the starting index for the channel."""
-        if self.range == 1:
-            self.freq = self.freq + 25e6
+        if self.range == 0:
+            n_discard = ceil((self.freq - 2) / 1.257 / self.sampling_time_ms)
+        elif self.range == 1:
+            n_discard = ceil((self.freq + 25 - 2) / 1.257 / self.sampling_time_ms)
+        else:
+            msg = f"Unsupported range {self.range} for NZ setup; expected 0 or 1"
+            raise ValueError(msg)
+
+        self.start_index = self.channel + n_discard
 
 
 channels: list[Config] = []
@@ -48,11 +58,12 @@ def create_channels(config_path: str | os.PathLike[str]) -> list[Config]:
 
         with Path(config_path).open() as f:
             config = yaml.safe_load(f)
+            sampling_time_ms = config["sampling_time_ms"]
             for c in config["filter_channels"]:
-                channels.append(Config(freq=c["freq"], polarisation=c["pol"], channel=c["ch"], range=c["range"], repeater=c["rep"]))
+                channels.append(Config(freq=c["freq"], polarisation=c["pol"], channel=c["ch"], range=c["range"], repeater=c["rep"], sampling_time_ms=sampling_time_ms))
 
             for c in config["sum_channels"]:
-                channels.append(Config(freq=c["freq"], polarisation=c["pol"], channel=c["ch"], range=c["range"], repeater=c["rep"]))
+                channels.append(Config(freq=c["freq"], polarisation=c["pol"], channel=c["ch"], range=c["range"], repeater=c["rep"], sampling_time_ms=sampling_time_ms))
 
     return channels
 
