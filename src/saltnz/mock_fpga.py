@@ -1,11 +1,12 @@
 """Mock FPGA implementation for testing/streaming purposes."""
 
-import logging
 from time import perf_counter, sleep
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import zmq
+
+from .constants import FPGA_PORT, logger
 
 if TYPE_CHECKING:
     import os
@@ -51,7 +52,6 @@ def stream(
     start: int = 0,
     stop: int | None = None,
     restart: int | None = None,
-    trigger: int = 0,
 ) -> None:
     """Stream data from a file.
 
@@ -62,33 +62,32 @@ def stream(
             the last row for the data in the `.npy` file.
         restart: If provided, the index will reset to this value after reaching `stop`,
             otherwise restart is set to `start`.
-        trigger: The index at which to send a trigger signal (modulo 20).
     """
     data = cast("FPGAData", np.load(path, mmap_mode="r"))
 
     context: Context[SyncSocket] = zmq.Context()
-    pusher: SyncSocket = context.socket(zmq.PUSH)
-    _ = pusher.bind("tcp://127.0.0.1:5555")
+    socket: SyncSocket = context.socket(zmq.PUSH)
+    _ = socket.bind(f"tcp://127.0.0.1:{FPGA_PORT}")
 
     if stop is None:
         stop = data.shape[0]
 
     t0: float = perf_counter()
     for index in indices(stop, start=start, restart=restart):
-        triggered = b"\x01" if index % 20 == trigger else b"\x00"
-        _ = pusher.send_multipart([triggered, data[index].tobytes()])  # pyright: ignore[reportAny, reportUnknownMemberType]
-        sleep(max(0, 0.01 - (perf_counter() - t0)))
+        triggered = b"\x01\x00\x00\x00" if index % 20 == 1 else b"\x00\x00\x00\x00"
+        try:
+            _ = socket.send_multipart([triggered, data[index]], flags=zmq.NOBLOCK)  # pyright: ignore[reportUnknownMemberType]
+        except zmq.Again:
+            logger.debug("No receiver available, skipping index %d", index)
+
+        try:
+            sleep(max(0, 0.01 - (perf_counter() - t0)))
+        except KeyboardInterrupt:
+            logger.info("Streaming interrupted by user")
+            break
+
         t0 = perf_counter()
 
-
-def stream_handler() -> None:
-    """Handle streaming data from the FPGA."""
-    context: Context[SyncSocket] = zmq.Context()
-    puller: SyncSocket = context.socket(zmq.PULL)
-    _ = puller.connect("tcp://127.0.0.1:5555")
-
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-
-    while True:
-        trigger, sample = puller.recv_multipart()
-        logging.info(f"Received trigger: {trigger}, sample: {sample[:10]}...")
+    socket.close()
+    context.term()
+    logger.info("ZMQ socket closed and context terminated")
