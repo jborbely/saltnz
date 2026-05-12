@@ -137,8 +137,6 @@ def ramp_handler(config_path: str | os.PathLike[str]) -> None:
     while True:
         try:
             ramp_data = np.frombuffer(socket.recv(), dtype=float).reshape(shape)
-            for 
-            ramp_data[channels[]]
             logger.info("Received ramp data in ramp handler, %s", shape)
         except KeyboardInterrupt:
             logger.info("Ramp handler interrupted by user")
