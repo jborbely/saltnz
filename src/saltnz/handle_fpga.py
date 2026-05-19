@@ -1,116 +1,28 @@
 """Handle data streamed from the FPGA."""
 
 import struct
-from dataclasses import dataclass
-from math import ceil
-from pathlib import Path
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import numpy as np
-import yaml
 import zmq
-
-if TYPE_CHECKING:
-    import os
-
 
 from .constants import FPGA_PORT, MSL_RAMP_PORT, logger
 
-FPGA_INTERCEPT_MHZ = 2.046338
-SWEEP_RATE_MHZ_PER_MS = 1.257
-DISCARD_MARGIN_SAMPLES = 0.1
-WRAPPED_RANGE_OFFSET_MHZ = 25
-
-@dataclass(slots=True)
-class Config:
-    """Configuration for a channel."""
-
-    freq: float
-    """The frequency of the ramp in MHz."""
-
-    polarisation: str
-    channel: int
-    range: int
-    repeater: int
-    sampling_time_ms: float
-    start_index: int = 0
-
-    def __post_init__(self) -> None:
-        """Calculate the starting index for the channel."""
-        if self.range == 0:
-            true_freq = self.freq
-        elif self.range == 1:
-            true_freq = self.freq + WRAPPED_RANGE_OFFSET_MHZ
-        else:
-            msg = f"Unsupported range {self.range} for NZ setup; expected 0 or 1"
-            raise ValueError(msg)
-
-        delay_samples = (
-            (true_freq - FPGA_INTERCEPT_MHZ)
-            / SWEEP_RATE_MHZ_PER_MS
-            / self.sampling_time_ms
-        )
-
-        n_discard = ceil(delay_samples)
-
-        if n_discard - delay_samples <= DISCARD_MARGIN_SAMPLES:
-            n_discard += 1
-
-        self.start_index = n_discard
-
-channels: list[Config] = []
+if TYPE_CHECKING:
+    from .config import Config
 
 
-def create_channels(config_path: str | os.PathLike[str]) -> list[Config]:
-    """Create channels from the YAML configuration file.
-
-    Args:
-        config_path: The path to the YAML configuration file.
-    """
-    if not channels:
-        with Path(config_path).open() as f:
-            config = yaml.safe_load(f)
-            sampling_time_ms = config["sampling_time_ms"]
-            channel_configs = config["filter_channels"] + config["sum_channels"]
-
-            for c in channel_configs:
-                channels.append(
-                    Config(
-                        freq=c["freq"],
-                        polarisation=c["pol"],
-                        channel=c["ch"],
-                        range=c["range"],
-                        repeater=c["rep"],
-                        sampling_time_ms=sampling_time_ms,
-                    )
-                )
-
-    return channels
-
-
-def get_shape_from_config(config_path: str | os.PathLike[str]) -> tuple[int, int]:
-    """Get the shape of the ramp data from the YAML configuration file.
-
-    Args:
-        config_path: The path to the YAML configuration file.
-    """
-    with Path(config_path).open() as f:
-        config = yaml.safe_load(f)
-        num_columns = len(config["filter_channels"]) + len(config["sum_channels"])
-        num_rows = config["ramp_time_ms"] // config["sampling_time_ms"]
-    return num_rows, num_columns
-
-
-def stream_handler(config_path: str | os.PathLike[str]) -> None:
+def stream_handler(config: Config) -> None:
     """Handle streaming data from the FPGA.
 
-    It receives data from the FPGA every ~10ms.
+    It receives data from the FPGA every `config.sampling_time_ms` milliseconds.
     It builds an array of frequencies for each ramp and then uses a ZMQ PUB socket to publish the ramp data.
 
     Args:
-        config_path: The path to the YAML configuration file.
+        config: The configuration object.
     """
-    num_rows, num_columns = get_shape_from_config(config_path)
+    num_rows, num_columns = config.array_shape()
 
     context = zmq.Context()
     fpga_socket = context.socket(zmq.PULL)
@@ -126,6 +38,7 @@ def stream_handler(config_path: str | os.PathLike[str]) -> None:
             trigger, frequencies = fpga_socket.recv_multipart()
             (bits,) = struct.unpack("I", trigger)
             if bits == 1:
+                t0 = struct.pack("d", datetime.now(UTC).timestamp())
                 ramp_data[0] = np.frombuffer(frequencies, dtype=float)
                 for i in range(1, num_rows):
                     trigger, frequencies = fpga_socket.recv_multipart()
@@ -134,10 +47,9 @@ def stream_handler(config_path: str | os.PathLike[str]) -> None:
                         logger.critical("Expected trigger bit 1, but got %d. Stopping stream handler", bits)
                         break
                     ramp_data[i] = np.frombuffer(frequencies, dtype=float)
-                msl_socket.send(ramp_data)
-                logger.info("Received ramp data")
+                msl_socket.send_multipart([t0, ramp_data])
     except KeyboardInterrupt:
-        logger.info("Stream handler interrupted by user")
+        logger.info("FPGA stream handler interrupted by user")
 
     fpga_socket.close()
     logger.info("FPGA socket closed")
@@ -147,31 +59,40 @@ def stream_handler(config_path: str | os.PathLike[str]) -> None:
     logger.info("ZMQ context terminated")
 
 
-def ramp_handler(config_path: str | os.PathLike[str]) -> None:
+def ramp_handler(config: Config) -> None:
     """Handle ramp data from stream handler.
 
     Does a ZMQ SUB to subscribe receive the ramp data.
 
     Args:
-        config_path: The path to the YAML configuration file.
+        config: The configuration object.
     """
-    shape = get_shape_from_config(config_path)
-    channels = create_channels(config_path)
-    for c in channels:
-        print(c)
+    shape = config.array_shape()
+    num_columns = shape[1]
 
     context = zmq.Context()
     socket = context.socket(zmq.SUB)
     socket.setsockopt_string(zmq.SUBSCRIBE, "")
     _ = socket.connect(f"tcp://127.0.0.1:{MSL_RAMP_PORT}")
 
-    while True:
-        try:
-            ramp_data = np.frombuffer(socket.recv(), dtype=float).reshape(shape)
-            logger.info("Received ramp data in ramp handler, %s", shape)
-        except KeyboardInterrupt:
-            logger.info("Ramp handler interrupted by user")
-            break
+    try:
+        while True:
+            t0, data = socket.recv_multipart()
+            trigger_time = struct.unpack("d", t0)[0]
+            ramp_data = np.frombuffer(data, dtype=float).reshape(shape)
+            # averaged = np.array([
+
+            #     for i in range(num_columns)
+
+            # ])
+            #  :
+            for i in range(num_columns):
+                ch = config.filter_channels[i]
+                ramp_data[ch.start_index :, i]
+
+            logger.info("Received ramp data in ramp handler, %s, %s", trigger_time, shape)
+    except KeyboardInterrupt:
+        logger.info("Ramp handler interrupted by user")
 
     socket.close()
     logger.info("ZMQ socket closed")

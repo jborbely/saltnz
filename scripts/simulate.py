@@ -39,6 +39,7 @@ def simulate(distance: float) -> tuple[float, float, Array1D, Array1D]:
 
     return delay, dx, x, np.append(y, np.full((x.size - y.size,), laser_frequency)) * 1e-6  # in MHz
 
+
 # the ramp signal at Auckland (the light that did not go to a sub-sea cable)
 delay, dx, x, auckland = simulate(repeater_distance)
 
