@@ -15,7 +15,8 @@ app = typer.Typer(name="salt")
 @app.command(help="Mock the FPGA data stream using a numpy file.")
 def mock(
     *,
-    path: Annotated[str, typer.Argument(help="The path to the numpy file containing the mock data.")],
+    path: Annotated[str, typer.Argument(help="The path to a numpy file containing the mock data.")],
+    config_path: Annotated[str, typer.Argument(help="The path to a YAML configuration file.")],
     start: Annotated[int, typer.Option(help="The starting index of the data to stream.")] = 0,
     stop: Annotated[
         int | None,
@@ -34,7 +35,7 @@ def mock(
     """Mock the FPGA data stream using a numpy file."""
     if debug:
         logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(message)s")
-    stream(path=path, start=start, stop=stop, restart=restart)
+    stream(path=path, config=Config(config_path), start=start, stop=stop, restart=restart)
 
 
 @app.command(help="Handle the FPGA data stream in real time.")

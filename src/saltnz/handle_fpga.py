@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import zmq
 
-from .constants import FPGA_PORT, MSL_RAMP_PORT, logger
+from .constants import FPGA_PORT, MSL_AVERAGED_PORT, MSL_RAMP_PORT, logger
 
 if TYPE_CHECKING:
     from .config import Config
@@ -33,6 +33,7 @@ def stream_handler(config: Config) -> None:
 
     ramp_data = np.full((num_rows, num_columns), dtype=float, fill_value=-1)
 
+    logger.info("Handling FPGA stream, press CTRL+C to close")
     try:
         while True:
             trigger, frequencies = fpga_socket.recv_multipart()
@@ -71,30 +72,36 @@ def ramp_handler(config: Config) -> None:
     num_columns = shape[1]
 
     context = zmq.Context()
-    socket = context.socket(zmq.SUB)
-    socket.setsockopt_string(zmq.SUBSCRIBE, "")
-    _ = socket.connect(f"tcp://127.0.0.1:{MSL_RAMP_PORT}")
+    sub_socket = context.socket(zmq.SUB)
+    sub_socket.setsockopt_string(zmq.SUBSCRIBE, "")
+    _ = sub_socket.connect(f"tcp://127.0.0.1:{MSL_RAMP_PORT}")
 
+    pub_socket = context.socket(zmq.PUB)
+    _ = pub_socket.bind(f"tcp://127.0.0.1:{MSL_AVERAGED_PORT}")
+
+    averages = np.full(num_columns + 1, dtype=float, fill_value=np.nan)
+
+    logger.info("Ramp handler running, press CTRL+C to close")
     try:
         while True:
-            t0, data = socket.recv_multipart()
-            trigger_time = struct.unpack("d", t0)[0]
+            trigger, data = sub_socket.recv_multipart()
+            averages[0] = struct.unpack("d", trigger)[0]
             ramp_data = np.frombuffer(data, dtype=float).reshape(shape)
-            # averaged = np.array([
 
-            #     for i in range(num_columns)
+            for i, ch in enumerate(config.filter_channels):
+                averages[i + 1] = np.average(ramp_data[ch.start_index :, i])
 
-            # ])
-            #  :
-            for i in range(num_columns):
-                ch = config.filter_channels[i]
-                ramp_data[ch.start_index :, i]
+            offset = len(config.filter_channels)
+            for i, ch in enumerate(config.sum_channels, start=offset):
+                averages[i + 1] = np.average(ramp_data[ch.start_index :, i])
 
-            logger.info("Received ramp data in ramp handler, %s, %s", trigger_time, shape)
+            pub_socket.send(averages)
+            logger.debug("Published averaged data")
     except KeyboardInterrupt:
         logger.info("Ramp handler interrupted by user")
 
-    socket.close()
+    sub_socket.close()
+    pub_socket.close()
     logger.info("ZMQ socket closed")
     context.term()
     logger.info("ZMQ context terminated")

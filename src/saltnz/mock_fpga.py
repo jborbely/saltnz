@@ -12,6 +12,8 @@ if TYPE_CHECKING:
     import os
     from collections.abc import Iterator
 
+    from .config import Config
+
     type FPGAData = np.memmap[tuple[int, int], np.dtype[np.float64]]
     from zmq.sugar.context import Context
     from zmq.sugar.socket import SyncSocket
@@ -49,20 +51,26 @@ def indices(stop: int, *, start: int = 0, restart: int | None = None) -> Iterato
 
 def stream(
     path: str | os.PathLike[str],
+    config: Config,
     start: int = 0,
     stop: int | None = None,
     restart: int | None = None,
+    ramp_start_index: int = 1,
 ) -> None:
     """Stream data from a file.
 
     Args:
         path: The path to the file to a `.npy` file.
+        config: The configuration object.
         start: The starting index for streaming.
         stop: The stopping index for streaming (excluded). If `None`, it will stream until
             the last row for the data in the `.npy` file.
         restart: If provided, the index will reset to this value after reaching `stop`,
             otherwise restart is set to `start`.
+        ramp_start_index: The index of the start of the ramp data.
     """
+    num_rows, _ = config.array_shape()
+
     data = cast("FPGAData", np.load(path, mmap_mode="r"))
 
     context: Context[SyncSocket] = zmq.Context()
@@ -72,9 +80,11 @@ def stream(
     if stop is None:
         stop = data.shape[0]
 
+    logger.info("Mocking FPGA stream, press CTRL+C to stop")
+
     t0: float = perf_counter()
     for index in indices(stop, start=start, restart=restart):
-        triggered = b"\x01\x00\x00\x00" if index % 20 == 1 else b"\x00\x00\x00\x00"
+        triggered = b"\x01\x00\x00\x00" if index % num_rows == ramp_start_index else b"\x00\x00\x00\x00"
         try:
             _ = socket.send_multipart([triggered, data[index]], flags=zmq.NOBLOCK)  # pyright: ignore[reportUnknownMemberType]
         except zmq.Again:

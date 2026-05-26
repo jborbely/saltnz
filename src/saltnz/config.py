@@ -51,9 +51,6 @@ class Config:
         ]
         """Information about the filtered channels."""
 
-        for channel in self.filter_channels:
-            calculate_start_index(channel, self)
-
         self.sum_channels: list[SumChannel] = [
             SumChannel(
                 channel=channel["ch"],
@@ -68,8 +65,18 @@ class Config:
         ]
         """Information about the summed filtered channels."""
 
-        for channel in self.sum_channels:
-            calculate_start_index(channel, self)
+        match self.measurement_type:
+            case MeasurementType.V1:
+                sampling_time_ms = self.sampling_time_ms
+                for channel in self.filter_channels:
+                    v1_calculate_start_index(channel, sampling_time_ms)
+                for channel in self.sum_channels:
+                    channel.start_index = max(
+                        c.start_index for c in self.filter_channels if c.channel in channel.sum_of
+                    )
+            case _:
+                msg = f"Measurement type {self.measurement_type} is not yet implemented"
+                raise NotImplementedError(msg)
 
     def __repr__(self) -> str:
         """Returns the string representation of the Config object."""
@@ -145,20 +152,16 @@ class SumChannel:
     """The index of the first *good* sample to be used for this channel."""
 
 
-def calculate_start_index(channel: FilterChannel | SumChannel, config: Config) -> None:
+def v1_calculate_start_index(channel: FilterChannel | SumChannel, sampling_time_ms: int) -> None:
     """Calculate the starting index for the channel.
 
     Args:
         channel: The channel for which to calculate the starting index.
-        config: The configuration object containing the measurement type and sampling time.
+        sampling_time_ms: The sampling time in milliseconds.
     """
-    if config.measurement_type == MeasurementType.V1:
-        true_freq = channel.freq + WRAPPED_RANGE_OFFSET_MHZ if channel.range == 1 else channel.freq
-        delay_samples = (true_freq - FPGA_INTERCEPT_MHZ) / SWEEP_RATE_MHZ_PER_MS / config.sampling_time_ms
-        n_discard = ceil(delay_samples)
-        if n_discard - delay_samples <= DISCARD_MARGIN_SAMPLES:
-            n_discard += 1
-        channel.start_index = n_discard
-    else:
-        msg = f"Measurement type {config.measurement_type} is not supported yet."
-        raise NotImplementedError(msg)
+    true_freq = channel.freq + WRAPPED_RANGE_OFFSET_MHZ if channel.range == 1 else channel.freq
+    delay_samples = (true_freq - FPGA_INTERCEPT_MHZ) / SWEEP_RATE_MHZ_PER_MS / sampling_time_ms
+    n_discard = ceil(delay_samples)
+    if n_discard - delay_samples <= DISCARD_MARGIN_SAMPLES:
+        n_discard += 1
+    channel.start_index = n_discard
