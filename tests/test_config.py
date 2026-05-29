@@ -10,7 +10,14 @@ if TYPE_CHECKING:
 
 @pytest.mark.parametrize(
     ("freq", "rng", "expected"),
-    [(2.645, 0, 1), (13.7, 0, 2), (25.82, 0, 2), (0.82, 1, 2), (14.14, 1, 4), (24.37, 1, 4)],
+    [
+        (2.645e6, 0, 1),
+        (13.7e6, 0, 2),
+        (25.82e6, 0, 2),
+        (0.82e6, 1, 2),
+        (14.14e6, 1, 4),
+        (24.37e6, 1, 4),
+    ],
 )
 def test_v1_calculate_start_index_filter_channel(freq: float, rng: int, expected: int) -> None:
     channel = FilterChannel(channel=0, freq=freq, polarisation="A", range=rng, repeater=0)
@@ -89,7 +96,7 @@ def test_load(tmp_path: Path) -> None:
     assert len(config.filter_channels) == 2
     assert config.filter_channels[0] == FilterChannel(
         channel=14,
-        freq=8.48,
+        freq=8.48e6,
         polarisation="A",
         range=0,
         repeater=7,
@@ -97,7 +104,7 @@ def test_load(tmp_path: Path) -> None:
     )
     assert config.filter_channels[1] == FilterChannel(
         channel=15,
-        freq=8.48,
+        freq=8.48e6,
         polarisation="B",
         range=0,
         repeater=7,
@@ -106,7 +113,7 @@ def test_load(tmp_path: Path) -> None:
     assert len(config.sum_channels) == 1
     assert config.sum_channels[0] == SumChannel(
         channel=122,
-        freq=8.48,
+        freq=8.48e6,
         polarisation="A+B",
         range=0,
         repeater=7,

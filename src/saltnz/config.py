@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from .constants import DISCARD_MARGIN_SAMPLES, FPGA_INTERCEPT_MHZ, SWEEP_RATE_MHZ_PER_MS, WRAPPED_RANGE_OFFSET_MHZ
+from .constants import DISCARD_MARGIN_SAMPLES, FPGA_INTERCEPT_HZ, SWEEP_RATE_HZ_PER_S, WRAPPED_RANGE_OFFSET_HZ
 
 if TYPE_CHECKING:
     import os
@@ -42,7 +42,7 @@ class Config:
         self.filter_channels: list[FilterChannel] = [
             FilterChannel(
                 channel=channel["ch"],
-                freq=channel["freq"],
+                freq=channel["freq"] * 1e6,
                 polarisation=channel["pol"],
                 range=channel["range"],
                 repeater=channel["rep"],
@@ -54,7 +54,7 @@ class Config:
         self.sum_channels: list[SumChannel] = [
             SumChannel(
                 channel=channel["ch"],
-                freq=channel["freq"],
+                freq=channel["freq"] * 1e6,
                 polarisation=channel["pol"],
                 range=channel["range"],
                 repeater=channel["rep"],
@@ -108,7 +108,7 @@ class FilterChannel:
     """The channel number."""
 
     freq: float
-    """The frequency of the channel in MHz."""
+    """The frequency of the channel in Hz."""
 
     polarisation: Literal["A", "B"]
     """Polarization type: A or B."""
@@ -131,7 +131,7 @@ class SumChannel:
     """The channel number."""
 
     freq: float
-    """The frequency of the channel in MHz."""
+    """The frequency of the channel in Hz."""
 
     polarisation: Literal["A+B"]
     """Polarization type: A+B."""
@@ -159,9 +159,12 @@ def v1_calculate_start_index(channel: FilterChannel | SumChannel, sampling_time_
         channel: The channel for which to calculate the starting index.
         sampling_time_ms: The sampling time in milliseconds.
     """
-    true_freq = channel.freq + WRAPPED_RANGE_OFFSET_MHZ if channel.range == 1 else channel.freq
-    delay_samples = (true_freq - FPGA_INTERCEPT_MHZ) / SWEEP_RATE_MHZ_PER_MS / sampling_time_ms
-    n_discard = ceil(delay_samples)
+    sample_period_s = sampling_time_ms / 1000.0
+    true_freq = channel.freq + WRAPPED_RANGE_OFFSET_HZ if channel.range == 1 else channel.freq
+    delay_samples = (true_freq - FPGA_INTERCEPT_HZ) / SWEEP_RATE_HZ_PER_S / sample_period_s
+    n_discard = ceil(delay_samples) + 1
+    # added +1, then the DISCARD_MARGIN_SAMPLES parameter is useless.
+    # Discarding one more sample seems to work better.
     if n_discard - delay_samples <= DISCARD_MARGIN_SAMPLES:
         n_discard += 1
     channel.start_index = n_discard
