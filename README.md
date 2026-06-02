@@ -27,6 +27,30 @@ The package requires Python 3.14 or newer.
 
 The package installs a CLI named `salt`.
 
+### What each component does
+
+- `mock` / `mock_fpga`: implemented in `src/saltnz/mock_fpga.py`. It replays recorded `.npy` rows and publishes them over ZeroMQ as if they were real FPGA output. It also inserts the trigger field into each row so the downstream handler can detect ramp boundaries.
+- `handler` / `handle_fpga`: implemented in `src/saltnz/handle_fpga.py`. It receives FPGA rows on port `5555`, detects the ramp-start trigger, builds each ramp into a complete 2D array, and republishes the ramp arrays on port `5556`.
+- `process` / `ramp_handler`: also implemented in `src/saltnz/handle_fpga.py`. It subscribes to ramp arrays from port `5556`, discards the configured number of initial samples per channel, averages the remaining data for each channel, and publishes the averaged channel results on port `5557`.
+
+### System data flow
+
+```text
+mock_fpga / FPGA source
+    |
+    | tcp://127.0.0.1:5555
+    v
+salt handler (builds ramps)
+    |
+    | tcp://127.0.0.1:5556
+    v
+salt process (averages channels)
+    |
+    | tcp://127.0.0.1:5557
+    v
+downstream consumer
+```
+
 ### Run the FPGA stream handler
 
 Receives FPGA samples on port `5555`, groups them into ramps, and publishes ramp arrays on port `5556`.
@@ -72,24 +96,6 @@ This launches:
 1. the mock FPGA data source,
 2. the FPGA stream handler,
 3. the averaged ramp processor.
-
-## Data Flow
-
-```text
-FPGA or mock data
-    |
-    | tcp://127.0.0.1:5555
-    v
-salt handler
-    |
-    | ramp arrays on tcp://127.0.0.1:5556
-    v
-salt process
-    |
-    | averaged channel data on tcp://127.0.0.1:5557
-    v
-downstream consumer
-```
 
 ## Configuration
 
