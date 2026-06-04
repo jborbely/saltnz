@@ -5,11 +5,11 @@ from __future__ import annotations
 import argparse
 import logging
 from collections import deque
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import Lock, Thread
-from typing import Literal
+from typing import Literal, TypedDict, TypeGuard, cast
 
 import numpy as np
 import plotly.graph_objects as go
@@ -37,6 +37,20 @@ PLOT_MODE_OPTIONS = [
     {"label": "Freq Deviation (/ config beat freq)", "value": "configured_offset"},
     {"label": "Freq Deviation (/ measured avg beat freq)", "value": "initial_offset"},
 ]
+
+
+class RepeaterTriggerId(TypedDict):
+    """Dash pattern-matching ID for a repeater button."""
+
+    type: Literal["repeater"]
+    key: str
+
+
+class PolarisationSelectorId(TypedDict):
+    """Dash pattern-matching ID for a polarisation checklist."""
+
+    type: Literal["polarisation"]
+    key: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,9 +253,17 @@ def more_than_one_ticked(values: Sequence[Sequence[BinaryPolarisation]]) -> bool
     return sum(1 for v in values if v) > 1
 
 
+def is_repeater_trigger_id(value: object) -> TypeGuard[RepeaterTriggerId]:
+    """Return whether a Dash triggered ID is a repeater button ID."""
+    if not isinstance(value, Mapping):
+        return False
+    trigger_id = cast("Mapping[str, object]", value)
+    return trigger_id.get("type") == "repeater" and isinstance(trigger_id.get("key"), str)
+
+
 def select_all_repeaters_values(
     options: Sequence[ChannelOption],
-    selector_ids: Sequence[dict[str, str]],
+    selector_ids: Sequence[PolarisationSelectorId],
 ) -> list[list[BinaryPolarisation]]:
     """Return checklist values selecting the default polarisation for every repeater."""
     return [[default_polarisation(options, selector_id["key"])] for selector_id in selector_ids]
@@ -251,7 +273,7 @@ def update_repeater_selection_values(
     options: Sequence[ChannelOption],
     triggered_id: object,
     current_values: Sequence[Sequence[BinaryPolarisation]] | None,
-    selector_ids: Sequence[dict[str, str]] | None,
+    selector_ids: Sequence[PolarisationSelectorId] | None,
 ) -> list[list[BinaryPolarisation]]:
     """Return updated repeater checklist values."""
     if selector_ids is None:
@@ -262,8 +284,8 @@ def update_repeater_selection_values(
             values = [[] for _ in selector_ids]
         else:
             values = select_all_repeaters_values(options, selector_ids)
-    elif isinstance(triggered_id, dict):
-        clicked_key = triggered_id.get("key")
+    elif is_repeater_trigger_id(triggered_id):
+        clicked_key = triggered_id["key"]
         for index, selector_id in enumerate(selector_ids):
             if selector_id["key"] != clicked_key:
                 continue
@@ -821,7 +843,7 @@ def create_app(store: AveragedDataStore, options: list[ChannelOption], interval_
         _: list[int | None],
         __: int | None,
         current_values: list[list[BinaryPolarisation]] | None,
-        selector_ids: list[dict[str, str]] | None,
+        selector_ids: list[PolarisationSelectorId] | None,
     ) -> list[list[BinaryPolarisation]]:
         """Update repeater selection from row clicks or the select-all button."""
         return update_repeater_selection_values(options, ctx.triggered_id, current_values, selector_ids)
@@ -848,7 +870,7 @@ def create_app(store: AveragedDataStore, options: list[ChannelOption], interval_
         selected_polarisations: list[list[BinaryPolarisation]] | None,
         plot_mode: str | None,
         baseline_seconds: float | None,
-        selector_ids: list[dict[str, str]] | None,
+        selector_ids: list[PolarisationSelectorId] | None,
     ) -> tuple[go.Figure, str]:
         """Refresh the graph and stream status line."""
         timestamps, rows, received, ignored_before_start = store.snapshot()
