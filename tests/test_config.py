@@ -11,12 +11,12 @@ if TYPE_CHECKING:
 @pytest.mark.parametrize(
     ("freq", "rng", "expected"),
     [
-        (2.645e6, 0, 1),
+        (2.645e6, 0, 2),
         (13.7e6, 0, 2),
-        (25.82e6, 0, 2),
-        (0.82e6, 1, 2),
+        (25.82e6, 0, 3),
+        (0.82e6, 1, 3),
         (14.14e6, 1, 4),
-        (24.37e6, 1, 4),
+        (24.37e6, 1, 5),
     ],
 )
 def test_v1_calculate_start_index_filter_channel(freq: float, rng: int, expected: int) -> None:
@@ -100,7 +100,7 @@ def test_load(tmp_path: Path) -> None:
         polarisation="A",
         range=0,
         repeater=7,
-        start_index=1,  # This value assumes DISCARD_MARGIN_SAMPLES = 0.1
+        start_index=2,  # This value assumes DISCARD_MARGIN_SAMPLES = 0.1
     )
     assert config.filter_channels[1] == FilterChannel(
         channel=15,
@@ -108,7 +108,7 @@ def test_load(tmp_path: Path) -> None:
         polarisation="B",
         range=0,
         repeater=7,
-        start_index=1,  # This value assumes DISCARD_MARGIN_SAMPLES = 0.1
+        start_index=2,  # This value assumes DISCARD_MARGIN_SAMPLES = 0.1
     )
     assert len(config.sum_channels) == 1
     assert config.sum_channels[0] == SumChannel(
@@ -119,7 +119,7 @@ def test_load(tmp_path: Path) -> None:
         repeater=7,
         sampling_time_ms=6,
         sum_of=[14, 15],
-        start_index=1,  # This value assumes DISCARD_MARGIN_SAMPLES = 0.1
+        start_index=2,  # This value assumes DISCARD_MARGIN_SAMPLES = 0.1
     )
 
     assert str(config) == f"Config(path={tmp_file.resolve()})"
