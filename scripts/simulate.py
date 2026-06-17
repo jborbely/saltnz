@@ -7,7 +7,7 @@ import numpy as np
 
 type Array1D = np.ndarray[tuple[int], np.dtype[np.float64]]
 
-ramp_slope = 1.257e9  # Hz/s
+ramp_slope = 1.26e9  # Hz/s
 ramp_duration = 0.2  # s
 dt = 1e-6  # approximate sampling time, s
 repeater_distance = 3843.757e3  # m
@@ -57,14 +57,14 @@ fig, (ax1, ax3) = plt.subplots(2, 1)
 
 ax1.set_xlabel("time [s]")
 ax1.set_ylabel("Ramp [MHz]")
-ax1.plot(x, auckland, color="tab:blue")
-ax1.plot(x, repeater, color="tab:red")
+ax1.plot(x, auckland, ":", color="tab:blue")
+ax1.plot(x, repeater, "--", color="tab:red")
 ax1.set_title(f"Round-trip delay {delay * 1e3:.1f} ms")
 
 ax2 = ax1.twinx()  # instantiate a second Axes that shares the same x-axis
 
 ax2.set_ylabel("Beat [MHz]", color="tab:green")
-ax2.plot(x, beat, color="tab:green")
+ax2.plot(x, beat,  color="tab:green")
 ax2.tick_params(axis="y", labelcolor="tab:green")
 
 ax3.set_xlabel("time [s]")
