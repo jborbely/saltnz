@@ -89,11 +89,11 @@ def ramp_handler(config: Config) -> None:
             ramp_data = np.frombuffer(data, dtype=float).reshape(shape)
 
             for i, ch in enumerate(config.filter_channels):
-                averages[i + 1] = np.average(ramp_data[ch.start_index :, i]) #- ch.freq
+                averages[i + 1] = np.average(ramp_data[ch.start_index :, i])  # - ch.freq
 
             offset = len(config.filter_channels)
             for i, ch in enumerate(config.sum_channels, start=offset):
-                averages[i + 1] = np.average(ramp_data[ch.start_index :, i]) #- ch.freq
+                averages[i + 1] = np.average(ramp_data[ch.start_index :, i])  # - ch.freq
 
             pub_socket.send(averages)
             logger.debug("Published averaged data")
