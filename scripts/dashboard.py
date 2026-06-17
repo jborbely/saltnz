@@ -364,15 +364,6 @@ def normalise_channel_selection(channel: ChannelSelection) -> list[ChannelOption
     return list(channel)
 
 
-def figure_title(channels: Sequence[ChannelOption]) -> str:
-    """Return a compact figure title for the selected channels."""
-    if not channels:
-        return ""
-    if len(channels) == 1:
-        return channels[0].title
-    return ""
-
-
 def normalise_plot_mode(plot_mode: str | None) -> PlotMode:
     """Return a supported plot mode, defaulting to absolute frequency."""
     if plot_mode == "configured_offset":
@@ -400,10 +391,13 @@ def grouped_channels(channels: Sequence[ChannelOption]) -> list[list[ChannelOpti
     return list(groups.values())
 
 
-def repeater_panel_title(channels: Sequence[ChannelOption]) -> str:
+def repeater_panel_title(channels: Sequence[ChannelOption], avg_freq_hz: float) -> str:
     """Return a subplot title for one repeater group."""
     channel = channels[0]
-    return f"Rep {channel.repeater} | {channel.frequency_Hz / 1e6:g} MHz | range {channel.channel_range}"
+    return (
+        f"Rep {channel.repeater} | {channel.frequency_Hz / 1e6:g} MHz | range {channel.channel_range} | "
+        f"avg freq:{avg_freq_hz / 1e6:.6f} MHz"
+    )
 
 
 def initial_window_baseline_hz(
@@ -504,9 +498,24 @@ def make_figure(
         empty_channel = channels[0] if len(channels) == 1 else None
         return make_empty_figure("Selected channel is missing from the averaged-data row", empty_channel)
     times = [datetime.fromtimestamp(timestamp, tz=UTC) for timestamp in timestamps]
+    numeric_timestamps = np.array(timestamps, dtype=float)
     channel_groups = grouped_channels(valid_channels)
     row_count = len(channel_groups)
-    subplot_titles = [repeater_panel_title(group) for group in channel_groups] if row_count > 1 else None
+    group_avg_freq_hz = [
+        float(
+            np.nanmean(
+                [
+                    initial_window_baseline_hz(numeric_timestamps, rows[:, ch.average_column], baseline_window_seconds)
+                    for ch in group
+                ]
+            )
+        )
+        for group in channel_groups
+    ]
+    subplot_titles = [
+        repeater_panel_title(group, avg_freq_hz)
+        for group, avg_freq_hz in zip(channel_groups, group_avg_freq_hz, strict=True)
+    ]
     figure = make_subplots(
         rows=row_count,
         cols=1,
@@ -515,7 +524,6 @@ def make_figure(
         subplot_titles=subplot_titles,
     )
     plot_times = np.array(times, dtype=object)
-    numeric_timestamps = np.array(timestamps, dtype=float)
     for row_index, group in enumerate(channel_groups, start=1):
         for selected_channel_option in group:
             measured_Hz = rows[:, selected_channel_option.average_column]  # noqa: N806
@@ -546,7 +554,6 @@ def make_figure(
                 col=1,
             )
     figure.update_layout(
-        title={"text": figure_title(valid_channels)},
         margin={"l": 64, "r": 24, "t": 56, "b": 56},
         paper_bgcolor="#f8fafc",
         plot_bgcolor="#ffffff",
